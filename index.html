@@ -188,8 +188,7 @@ button:disabled { opacity: 0.5; cursor: default; }
   <fieldset>
     <legend>Source</legend>
     <div class="row">
-      <label class="field"><span>Start date</span><input type="date" id="start"></label>
-      <label class="field"><span>End date</span><input type="date" id="end"></label>
+      <label class="field"><span>Month</span><input type="month" id="month"></label>
       <label class="field"><span>School</span><select id="building"></select></label>
       <button id="load">Load menu</button>
       <button class="secondary" id="pick" hidden>Open saved JSON&hellip;</button>
@@ -403,6 +402,43 @@ function parseDate(value) {
 
 function pad(n) {
   return String(n).padStart(2, '0');
+}
+
+/**
+ * The date range a month's printed grid actually covers: whole weeks, so the
+ * days either side of the month boundary can be filled in rather than left
+ * blank. September 2026 spans Monday 8/31 through Sunday 10/4.
+ *
+ * Padded to Monday..Sunday so it covers the seven-column grid too, which is
+ * only chosen after the data comes back.
+ *
+ * @returns {{start: string, end: string}} inclusive YYYY-MM-DD bounds
+ */
+function monthGridRange(year, month) {
+  const start = new Date(year, month - 1, 1);
+  start.setDate(start.getDate() - mondayIndex(start));
+
+  const end = new Date(year, month, 0);
+  end.setDate(end.getDate() + (6 - mondayIndex(end)));
+
+  return { start: isoDate(start), end: isoDate(end) };
+}
+
+/** Day of the week counted from Monday, so Monday is 0 and Sunday is 6. */
+function mondayIndex(date) {
+  return (date.getDay() + 6) % 7;
+}
+
+function isoDate(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * Drop rows outside an inclusive YYYY-MM-DD range. A response can cover more
+ * than was asked for, and extra days would otherwise render extra pages.
+ */
+function filterRowsByRange(rows, start, end) {
+  return rows.filter((row) => row.date && row.date >= start && row.date <= end);
 }
 
 /** Map a raw serving-session label onto one of our canonical buckets. */
@@ -1161,7 +1197,7 @@ body {
 `;
 }
 
-  return { publicMenuUrl: publicMenuUrl, DISTRICT: DISTRICT, BUILDINGS: BUILDINGS, DEFAULT_BUILDING_ID: DEFAULT_BUILDING_ID, flattenRecipes: flattenRecipes, parseDate: parseDate, classifySession: classifySession, groupByDate: groupByDate, categoriesByRecipe: categoriesByRecipe, collectCategories: collectCategories, collectSessions: collectSessions, parseMenu: parseMenu, splitStaples: splitStaples, repeatsAcross: repeatsAcross, removeItems: removeItems, renderPages: renderPages, renderCalendar: renderCalendar, PRINT_GEOMETRY: PRINT_GEOMETRY, CONTENT_HEIGHT_IN: CONTENT_HEIGHT_IN, CONTENT_INCHES: CONTENT_INCHES };
+  return { publicMenuUrl: publicMenuUrl, DISTRICT: DISTRICT, BUILDINGS: BUILDINGS, DEFAULT_BUILDING_ID: DEFAULT_BUILDING_ID, flattenRecipes: flattenRecipes, parseDate: parseDate, monthGridRange: monthGridRange, filterRowsByRange: filterRowsByRange, classifySession: classifySession, groupByDate: groupByDate, categoriesByRecipe: categoriesByRecipe, collectCategories: collectCategories, collectSessions: collectSessions, parseMenu: parseMenu, splitStaples: splitStaples, repeatsAcross: repeatsAcross, removeItems: removeItems, renderPages: renderPages, renderCalendar: renderCalendar, PRINT_GEOMETRY: PRINT_GEOMETRY, CONTENT_HEIGHT_IN: CONTENT_HEIGHT_IN, CONTENT_INCHES: CONTENT_INCHES };
 })();
 /* linq-bundle:end */
 
@@ -1213,19 +1249,25 @@ body {
     var p = iso.split('-');
     return Number(p[1]) + '-' + Number(p[2]) + '-' + p[0];
   }
-  function isoToday(offsetDays) {
+  function thisMonth() {
     var d = new Date();
-    d.setDate(d.getDate() + (offsetDays || 0));
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
-      String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  /** Whole weeks around the selected month, so 8/31 and 10/1 can be filled. */
+  function gridRange() {
+    var parts = (el('month').value || '').split('-');
+    if (parts.length !== 2) return null;
+    return LinqMenu.monthGridRange(Number(parts[0]), Number(parts[1]));
   }
 
   function menuUrl() {
+    var range = gridRange();
     return 'https://api.linqconnect.com/api/FamilyMenu' +
       '?buildingId=' + encodeURIComponent(el('building').value) +
       '&districtId=' + encodeURIComponent(el('district').value.trim()) +
-      '&startDate=' + encodeURIComponent(toApiDate(el('start').value)) +
-      '&endDate=' + encodeURIComponent(toApiDate(el('end').value));
+      '&startDate=' + encodeURIComponent(toApiDate(range.start)) +
+      '&endDate=' + encodeURIComponent(toApiDate(range.end));
   }
 
   function curlCommand() {
@@ -1243,8 +1285,8 @@ body {
   // client-side code can work around that. So: try with the header, retry
   // without it in case it is optional, then fall back to a saved file.
   function load() {
-    if (!el('start').value || !el('end').value) {
-      status('error', 'Pick a start and end date first.');
+    if (!gridRange()) {
+      status('error', 'Pick a month first.');
       return;
     }
     el('load').disabled = true;
@@ -1298,11 +1340,20 @@ body {
   /** Take a freshly loaded payload, rebuild the controls, and render. */
   function adopt(data, note) {
     payload = data;
-    rows = LinqMenu.flattenRecipes(data);
+
+    // A response can carry more than was asked for; clipping to the selected
+    // month's grid keeps the output to the one page the month picker implies.
+    var all = LinqMenu.flattenRecipes(data);
+    var range = gridRange();
+    rows = LinqMenu.filterRowsByRange(all, range.start, range.end);
 
     if (rows.length === 0) {
-      status('error', 'The response parsed, but held no menu items. ' +
-        'Check the dates and the building/district IDs.');
+      var span = datesIn(all);
+      status('error', 'Nothing to show for ' + range.start + ' to ' + range.end + '. ' +
+        (span
+          ? 'The response covers ' + span.first + ' to ' + span.last +
+            ', so try that month instead.'
+          : 'The response held no menu items at all; check the building and district IDs.'));
       return;
     }
 
@@ -1450,6 +1501,12 @@ body {
     );
     el('cat-hover').classList.add('is-hidden');
     el('cat-hover-idle').classList.remove('is-hidden');
+  }
+
+  /** The first and last dates present in a set of rows, if any. */
+  function datesIn(rows) {
+    var dates = rows.map(function (r) { return r.date; }).filter(Boolean).sort();
+    return dates.length ? { first: dates[0], last: dates[dates.length - 1] } : null;
   }
 
   /** Distinct recipes in a category, among the meals currently being printed. */
@@ -1652,8 +1709,9 @@ body {
   el('pick').hidden = !DEBUG;
   el('ids').hidden = !DEBUG;
   updateLink();
-  el('start').value = isoToday(0);
-  el('end').value = isoToday(35);
+  // Always the current month rather than a remembered one; a stale month is
+  // more confusing than a click.
+  el('month').value = thisMonth();
   if (prefs.title) el('title').value = prefs.title;
   if (prefs.layout) el('layout').value = prefs.layout;
   if (prefs.scale) el('scale').value = prefs.scale;
@@ -1663,6 +1721,14 @@ body {
   el('identifier').addEventListener('input', function () {
     updateLink();
     persist();
+  });
+  el('month').addEventListener('change', function () {
+    if (loadedFrom === 'network') {
+      load();
+    } else if (loadedFrom === 'file') {
+      status('info', 'Showing the file you opened. Click Load menu to fetch ' +
+        el('month').value + '.');
+    }
   });
   el('building').addEventListener('change', function () {
     updateLink();
