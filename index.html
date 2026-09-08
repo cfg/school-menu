@@ -231,7 +231,7 @@ button:disabled { opacity: 0.5; cursor: default; }
   <fieldset id="output-box" hidden>
     <legend>Output</legend>
     <div class="row">
-      <label class="field"><span>Title</span><input type="text" id="title" value="School Menu"></label>
+      <label class="field"><span>Title (tab &amp; PDF name)</span><input type="text" id="title" value="School Menu"></label>
       <label class="field"><span>Layout</span>
         <select id="layout">
           <option value="month">One page per month</option>
@@ -580,7 +580,7 @@ const SESSION_LABELS = {
  * embedding in a host document.
  *
  * @param {Map<string, Map<string, string[]>>} calendar date -> session -> recipes
- * @param {{title?: string, subtitle?: string, sessions?: string[],
+ * @param {{title?: string, sessions?: string[],
  *   fontScale?: number|'auto', staples?: Map<string, string[]>,
  *   hoistWeekly?: boolean, layout?: 'month'|'week',
  *   categoriesOf?: Map<string, string[]>}} options
@@ -589,7 +589,6 @@ const SESSION_LABELS = {
 function renderPages(calendar, options = {}) {
   const {
     title = 'School Menu',
-    subtitle = '',
     sessions = ['breakfast', 'lunch'],
     fontScale = 'auto',
     staples = new Map(),
@@ -613,7 +612,7 @@ function renderPages(calendar, options = {}) {
   const footer = renderStaples(staples, sessions, categoriesOf);
 
   const pages = fitUnits.map((unit) =>
-    renderPage(unit, columns, sessions, { title, subtitle, footer, layout, categoriesOf })
+    renderPage(unit, columns, sessions, { footer, layout, categoriesOf })
   );
 
   return {
@@ -740,14 +739,8 @@ function buildWeeks(first, last, columns) {
 // Markup
 // ---------------------------------------------------------------------------
 
-function renderPage(
-  { year, month, weeks },
-  columns,
-  sessions,
-  { title, subtitle, footer, layout, categoriesOf }
-) {
+function renderPage({ year, month, weeks }, columns, sessions, { footer, layout, categoriesOf }) {
   const headerCells = columns.map((c) => `<th>${DAY_NAMES[c]}</th>`).join('');
-  const sub = subtitle ? `<div class="subtitle">${escapeHtml(subtitle)}</div>` : '';
 
   // In week layout every cell belongs to the page, even across a month border.
   const shadeMonth = layout === 'week' ? null : month;
@@ -755,23 +748,27 @@ function renderPage(
   const bodyRows = weeks
     .map((week) => {
       const cells = week.dates
-        .map((date) => renderCell(date, shadeMonth, week.cells, sessions, categoriesOf))
+        .map((date, i) => {
+          // There is no page heading to carry the month, so the row's first day
+          // names it, as does any day that starts a new month mid-row.
+          const previous = i > 0 ? week.dates[i - 1] : null;
+          const namesMonth = !previous || previous.getMonth() !== date.getMonth();
+          return renderCell(date, shadeMonth, week.cells, sessions, categoriesOf, namesMonth);
+        })
         .join('');
       return `<tr>${cells}</tr>${renderWeekNote(week.repeats, sessions, columns.length, categoriesOf)}`;
     })
     .join('\n');
 
-  const heading =
+  // Kept as an attribute rather than a heading: a host page can still name the
+  // page (the overflow warning does) without spending paper on it.
+  const first = weeks[0].dates[0];
+  const label =
     layout === 'week'
-      ? `Week of ${MONTH_NAMES[weeks[0].dates[0].getMonth()]} ${weeks[0].dates[0].getDate()}, ${weeks[0].dates[0].getFullYear()}`
+      ? `Week of ${MONTH_NAMES[first.getMonth()]} ${first.getDate()}, ${first.getFullYear()}`
       : `${MONTH_NAMES[month - 1]} ${year}`;
 
-  return `<section class="page layout-${layout}">
-  <header class="page-head">
-    <h1>${escapeHtml(title)}</h1>
-    <div class="month">${heading}</div>
-    ${sub}
-  </header>
+  return `<section class="page layout-${layout}" data-label="${escapeHtml(label)}">
   <table class="calendar">
     <thead><tr>${headerCells}</tr></thead>
     <tbody>
@@ -782,7 +779,7 @@ ${bodyRows}
 </section>`;
 }
 
-function renderCell(date, month, cells, sessions, categoriesOf) {
+function renderCell(date, month, cells, sessions, categoriesOf, namesMonth) {
   const dayMenu = cells.get(toKey(date));
   const blocks = sessions
     .map((session) => {
@@ -801,7 +798,11 @@ function renderCell(date, month, cells, sessions, categoriesOf) {
   if (month !== null && date.getMonth() + 1 !== month) classes.push('outside');
   if (!blocks) classes.push('blank');
 
-  return `<td class="${classes.join(' ')}"><div class="daynum">${date.getDate()}</div>${blocks}</td>`;
+  const day = namesMonth
+    ? `${MONTH_NAMES[date.getMonth()]} ${date.getDate()}`
+    : String(date.getDate());
+
+  return `<td class="${classes.join(' ')}"><div class="daynum">${day}</div>${blocks}</td>`;
 }
 
 function renderWeekNote(repeats, sessions, colSpan, categoriesOf) {
@@ -917,11 +918,10 @@ function fitFontScale(months, columns, sessions, staples) {
 
 /** Page header, weekday header row and the staples footer. */
 function chromeHeight(scale, sessions, staples) {
-  const header = 13 * 1.2 + 4 + 1.5 + 7;
   const weekdayRow = 7.5 * 1.2 + 3 + 1;
   const stapleRows = sessions.filter((s) => staples.get(s)?.length).length;
   const footer = stapleRows === 0 ? 0 : 6 + 0.75 + 4 + 7 * 1.3 + 2 + stapleRows * 6.5 * scale * 1.35;
-  return header + weekdayRow + footer;
+  return weekdayRow + footer;
 }
 
 function charsPerLine(width, item) {
@@ -1039,18 +1039,6 @@ body {
   padding: 0.15in 0;
 }
 .page:last-child { page-break-after: auto; break-after: auto; }
-
-.page-head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.18in;
-  border-bottom: 1.5pt solid var(--ink);
-  padding-bottom: 4pt;
-  margin-bottom: 7pt;
-}
-.page-head h1 { font-size: 13pt; margin: 0; letter-spacing: 0.2pt; }
-.page-head .month { font-size: 11pt; color: var(--muted); }
-.page-head .subtitle { margin-left: auto; font-size: 8pt; color: var(--muted); }
 
 .calendar {
   width: 100%;
@@ -1526,7 +1514,6 @@ body {
     var scaleValue = el('scale').value;
     var out = LinqMenu.renderPages(split.calendar, {
       title: el('title').value || 'School Menu',
-      subtitle: formatRange(split.calendar),
       sessions: sessions,
       staples: split.staples,
       hoistWeekly: hoist,
@@ -1543,9 +1530,14 @@ body {
 
     var pageCount = el('preview').querySelectorAll('.page').length;
     el('preview-head').hidden = false;
+    var labels = Array.prototype.map.call(
+      el('preview').querySelectorAll('.page'),
+      function (page) { return page.dataset.label; }
+    );
     el('preview-meta').textContent =
       pageCount + (pageCount === 1 ? ' page' : ' pages') +
-      ' · ' + (6.5 * out.scale).toFixed(1) + 'pt menu text';
+      ' · ' + (6.5 * out.scale).toFixed(1) + 'pt menu text' +
+      (labels.length ? ' · ' + labels.join(', ') : '');
 
     checkOverflow();
   }
@@ -1570,9 +1562,8 @@ body {
         parseFloat(css.paddingTop) - parseFloat(css.paddingBottom);
       // Half a point of tolerance for sub-pixel layout rounding.
       if (content > CONTENT_LIMIT_PX + 0.7) {
-        var heading = page.querySelector('.month');
         over.push({
-          label: heading ? heading.textContent : 'Page ' + (i + 1),
+          label: page.dataset.label || 'Page ' + (i + 1),
           inches: content / 96
         });
       }
@@ -1614,15 +1605,6 @@ body {
     var out = {};
     list.forEach(function (b) { out[b.value] = b.checked; });
     return out;
-  }
-
-  function formatRange(calendar) {
-    var keys = Array.from(calendar.keys()).sort();
-    if (keys.length === 0) return '';
-    var fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
-    var first = new Date(keys[0] + 'T00:00:00');
-    var last = new Date(keys[keys.length - 1] + 'T00:00:00');
-    return fmt.format(first) + ' to ' + fmt.format(last) + ', ' + last.getFullYear();
   }
 
   function schoolName() {
