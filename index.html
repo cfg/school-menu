@@ -254,6 +254,10 @@ button:disabled { opacity: 0.5; cursor: default; }
       </label>
       <button id="print">Print</button>
     </div>
+    <div class="checks" style="margin-top:0.7rem">
+      <label><input type="checkbox" id="from-today" checked><span>Start at this
+        week, skipping days already past</span></label>
+    </div>
     <p class="hint">Print with <strong>Landscape</strong> orientation and
       <strong>background graphics</strong> enabled.</p>
   </fieldset>
@@ -405,6 +409,40 @@ function pad(n) {
 }
 
 /**
+ * Calendar notes by date, from the payload's AcademicCalendars section. These
+ * are why a school day has no menu — "Labor Day" on 9/4 and 9/7 is the
+ * difference between an unexplained blank cell and a closed school.
+ *
+ * @returns {Map<string, string>} YYYY-MM-DD -> note
+ */
+function collectNotes(payload) {
+  const found = new Map();
+  walkNotes(payload, found);
+  return new Map([...found].map(([date, notes]) => [date, [...notes].join(' · ')]));
+}
+
+function walkNotes(node, found) {
+  if (Array.isArray(node)) {
+    for (const item of node) walkNotes(item, found);
+    return;
+  }
+  if (node === null || typeof node !== 'object') return;
+
+  // Both fields together are specific to a calendar day; no recipe or menu
+  // object carries a Note, so this cannot pick up menu content by accident.
+  const note = typeof node.Note === 'string' ? node.Note.trim() : '';
+  if (note && node.Date) {
+    const date = parseDate(node.Date);
+    if (date) {
+      if (!found.has(date)) found.set(date, new Set());
+      found.get(date).add(note);
+    }
+  }
+
+  for (const value of Object.values(node)) walkNotes(value, found);
+}
+
+/**
  * The date range a month's printed grid actually covers: whole weeks, so the
  * days either side of the month boundary can be filled in rather than left
  * blank. September 2026 spans Monday 8/31 through Sunday 10/4.
@@ -422,6 +460,25 @@ function monthGridRange(year, month) {
   end.setDate(end.getDate() + (6 - mondayIndex(end)));
 
   return { start: isoDate(start), end: isoDate(end) };
+}
+
+/**
+ * Trim a grid range so it begins at the start of the week containing `today`,
+ * dropping weeks that have already passed. Left alone when today falls outside
+ * the range, so picking a past or future month still prints in full.
+ *
+ * @param {{start: string, end: string}} range from monthGridRange
+ * @param {Date} today
+ */
+function startAtWeekOf(range, today) {
+  const iso = isoDate(today);
+  if (iso < range.start || iso > range.end) return range;
+
+  const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  monday.setDate(monday.getDate() - mondayIndex(monday));
+
+  const start = isoDate(monday);
+  return { start: start > range.start ? start : range.start, end: range.end };
 }
 
 /** Day of the week counted from Monday, so Monday is 0 and Sunday is 6. */
@@ -619,7 +676,7 @@ const SESSION_LABELS = {
  * @param {{title?: string, sessions?: string[],
  *   fontScale?: number|'auto', staples?: Map<string, string[]>,
  *   hoistWeekly?: boolean, layout?: 'month'|'week',
- *   categoriesOf?: Map<string, string[]>}} options
+ *   categoriesOf?: Map<string, string[]>, notes?: Map<string, string>}} options
  * @returns {{css: string, body: string, scale: number}}
  */
 function renderPages(calendar, options = {}) {
@@ -631,6 +688,7 @@ function renderPages(calendar, options = {}) {
     hoistWeekly = true,
     layout = 'month',
     categoriesOf = null,
+    notes = new Map(),
   } = options;
 
   const dates = [...calendar.keys()];
@@ -644,11 +702,13 @@ function renderPages(calendar, options = {}) {
   // In week layout each page holds a single week, so fit against that instead.
   const fitUnits = layout === 'week' ? splitPerWeek(months) : months;
   const scale =
-    fontScale === 'auto' ? fitFontScale(fitUnits, columns, sessions, staples) : fontScale;
+    fontScale === 'auto'
+      ? fitFontScale(fitUnits, columns, sessions, staples, notes)
+      : fontScale;
   const footer = renderStaples(staples, sessions, categoriesOf);
 
   const pages = fitUnits.map((unit) =>
-    renderPage(unit, columns, sessions, { footer, layout, categoriesOf })
+    renderPage(unit, columns, sessions, { footer, layout, categoriesOf, notes })
   );
 
   return {
@@ -775,21 +835,38 @@ function buildWeeks(first, last, columns) {
 // Markup
 // ---------------------------------------------------------------------------
 
-function renderPage({ year, month, weeks }, columns, sessions, { footer, layout, categoriesOf }) {
+function renderPage(
+  { year, month, weeks },
+  columns,
+  sessions,
+  { footer, layout, categoriesOf, notes }
+) {
   const headerCells = columns.map((c) => `<th>${DAY_NAMES[c]}</th>`).join('');
 
   // In week layout every cell belongs to the page, even across a month border.
   const shadeMonth = layout === 'week' ? null : month;
 
+  // There is no page heading to carry the month, so the first day of each
+  // month names it. Tracked across the whole page, not per row, so it appears
+  // once rather than on every Monday.
+  const named = new Set();
+
   const bodyRows = weeks
     .map((week) => {
       const cells = week.dates
-        .map((date, i) => {
-          // There is no page heading to carry the month, so the row's first day
-          // names it, as does any day that starts a new month mid-row.
-          const previous = i > 0 ? week.dates[i - 1] : null;
-          const namesMonth = !previous || previous.getMonth() !== date.getMonth();
-          return renderCell(date, shadeMonth, week.cells, sessions, categoriesOf, namesMonth);
+        .map((date) => {
+          const key = `${date.getFullYear()}-${date.getMonth()}`;
+          const namesMonth = !named.has(key);
+          named.add(key);
+          return renderCell(
+            date,
+            shadeMonth,
+            week.cells,
+            sessions,
+            categoriesOf,
+            namesMonth,
+            notes.get(toKey(date))
+          );
         })
         .join('');
       return `<tr>${cells}</tr>${renderWeekNote(week.repeats, sessions, columns.length, categoriesOf)}`;
@@ -815,7 +892,7 @@ ${bodyRows}
 </section>`;
 }
 
-function renderCell(date, month, cells, sessions, categoriesOf, namesMonth) {
+function renderCell(date, month, cells, sessions, categoriesOf, namesMonth, note) {
   const dayMenu = cells.get(toKey(date));
   const blocks = sessions
     .map((session) => {
@@ -830,15 +907,20 @@ function renderCell(date, month, cells, sessions, categoriesOf, namesMonth) {
     .filter(Boolean)
     .join('');
 
+  // On a closed day there is no menu, so the note stands in its place; on a
+  // day that has both, it sits above the food.
+  const dayNote = note ? `<div class="day-note">${escapeHtml(note)}</div>` : '';
+
   const classes = ['cell'];
   if (month !== null && date.getMonth() + 1 !== month) classes.push('outside');
   if (!blocks) classes.push('blank');
+  if (note) classes.push('noted');
 
   const day = namesMonth
     ? `${MONTH_NAMES[date.getMonth()]} ${date.getDate()}`
     : String(date.getDate());
 
-  return `<td class="${classes.join(' ')}"><div class="daynum">${day}</div>${blocks}</td>`;
+  return `<td class="${classes.join(' ')}"><div class="daynum">${day}</div>${dayNote}${blocks}</td>`;
 }
 
 function renderWeekNote(repeats, sessions, colSpan, categoriesOf) {
@@ -927,7 +1009,7 @@ const PAGE_HEIGHT = CONTENT_HEIGHT_IN * 72 - 5;
  * lines a long recipe name wraps to, derived from its character count against
  * the column width.
  */
-function fitFontScale(months, columns, sessions, staples) {
+function fitFontScale(months, columns, sessions, staples, notes) {
   // Search downward from the largest sane size. The CSS minimum cell height
   // scales too, so a sparse page stops growing once its rows fill the sheet.
   for (let scale = 1.6; scale > 0.7; scale -= 0.02) {
@@ -937,7 +1019,15 @@ function fitFontScale(months, columns, sessions, staples) {
         (total, week) =>
           total +
           Math.max(
-            ...week.dates.map((d) => cellHeight(week.cells.get(toKey(d)), sessions, scale, columns.length))
+            ...week.dates.map((d) =>
+              cellHeight(
+                week.cells.get(toKey(d)),
+                sessions,
+                scale,
+                columns.length,
+                notes.get(toKey(d))
+              )
+            )
           ) +
           weekNoteHeight(week.repeats, sessions, scale, columns.length),
         0
@@ -966,13 +1056,19 @@ function charsPerLine(width, item) {
   return Math.max(10, Math.floor(width / (item * 0.48)));
 }
 
-function cellHeight(dayMenu, sessions, scale, columnCount) {
+function cellHeight(dayMenu, sessions, scale, columnCount, note) {
   const item = 6.5 * scale;
   const lineHeight = item * 1.25;
   const chars = charsPerLine((CONTENT_INCHES / columnCount) * 72 - 8, item);
 
   let height = 8 * scale * 1.2 + 2 + 7 + 1; // day number, cell padding, border
   let blocks = 0;
+
+  if (note) {
+    height +=
+      Math.max(1, Math.ceil(note.length / charsPerLine((CONTENT_INCHES / columnCount) * 72 - 8, 6.5 * scale))) *
+        6.5 * scale * 1.25 + 2;
+  }
 
   for (const session of sessions) {
     const items = dayMenu?.get(session);
@@ -1047,6 +1143,7 @@ function styles(fontScale) {
   --breakfast: #7a4d00;
   --lunch: #1d4f7a;
   --snack: #4a5a2a;
+  --note: #8a5a12;
 }
 
 @page {
@@ -1108,6 +1205,16 @@ body {
   color: var(--muted);
   margin-bottom: 2pt;
 }
+
+.day-note {
+  font-size: var(--item);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--note);
+  margin-bottom: 2pt;
+}
+.cell.noted { background: #fbf8ef; }
+.cell.outside.noted { background: #f4f1e8; }
 
 .meal { margin-bottom: 2.5pt; }
 .meal:last-child { margin-bottom: 0; }
@@ -1197,7 +1304,7 @@ body {
 `;
 }
 
-  return { publicMenuUrl: publicMenuUrl, DISTRICT: DISTRICT, BUILDINGS: BUILDINGS, DEFAULT_BUILDING_ID: DEFAULT_BUILDING_ID, flattenRecipes: flattenRecipes, parseDate: parseDate, monthGridRange: monthGridRange, filterRowsByRange: filterRowsByRange, classifySession: classifySession, groupByDate: groupByDate, categoriesByRecipe: categoriesByRecipe, collectCategories: collectCategories, collectSessions: collectSessions, parseMenu: parseMenu, splitStaples: splitStaples, repeatsAcross: repeatsAcross, removeItems: removeItems, renderPages: renderPages, renderCalendar: renderCalendar, PRINT_GEOMETRY: PRINT_GEOMETRY, CONTENT_HEIGHT_IN: CONTENT_HEIGHT_IN, CONTENT_INCHES: CONTENT_INCHES };
+  return { publicMenuUrl: publicMenuUrl, DISTRICT: DISTRICT, BUILDINGS: BUILDINGS, DEFAULT_BUILDING_ID: DEFAULT_BUILDING_ID, flattenRecipes: flattenRecipes, parseDate: parseDate, collectNotes: collectNotes, monthGridRange: monthGridRange, startAtWeekOf: startAtWeekOf, filterRowsByRange: filterRowsByRange, classifySession: classifySession, groupByDate: groupByDate, categoriesByRecipe: categoriesByRecipe, collectCategories: collectCategories, collectSessions: collectSessions, parseMenu: parseMenu, splitStaples: splitStaples, repeatsAcross: repeatsAcross, removeItems: removeItems, renderPages: renderPages, renderCalendar: renderCalendar, PRINT_GEOMETRY: PRINT_GEOMETRY, CONTENT_HEIGHT_IN: CONTENT_HEIGHT_IN, CONTENT_INCHES: CONTENT_INCHES };
 })();
 /* linq-bundle:end */
 
@@ -1224,6 +1331,7 @@ body {
   var payload = null;     // the raw response, kept so re-filtering needs no refetch
   var loadedFrom = null;  // 'network' or 'file'
   var hovered = null;     // category whose removal is being previewed
+  var notes = new Map();  // date -> calendar note, e.g. "Labor Day"
 
   // -- persistence ---------------------------------------------------------
   // Wrapped because a private window or blocked site data makes these throw.
@@ -1346,6 +1454,7 @@ body {
     var all = LinqMenu.flattenRecipes(data);
     var range = gridRange();
     rows = LinqMenu.filterRowsByRange(all, range.start, range.end);
+    notes = LinqMenu.collectNotes(data);
 
     if (rows.length === 0) {
       var span = datesIn(all);
@@ -1545,6 +1654,14 @@ body {
     var skipCategories = uncheckedValues('category');
     persist();
 
+    // Trimming happens here, not at fetch time, so the checkbox re-renders
+    // from data already in hand.
+    var range = gridRange();
+    var shown = el('from-today').checked
+      ? LinqMenu.startAtWeekOf(range, new Date())
+      : range;
+    var visible = LinqMenu.filterRowsByRange(rows, shown.start, shown.end);
+
     if (sessions.length === 0) {
       el('preview').innerHTML = '';
       el('preview-head').hidden = true;
@@ -1553,7 +1670,7 @@ body {
       return;
     }
 
-    var calendar = LinqMenu.groupByDate(rows, { skipCategories: skipCategories });
+    var calendar = LinqMenu.groupByDate(visible, { skipCategories: skipCategories });
     if (calendar.size === 0) {
       el('preview').innerHTML = '';
       el('preview-head').hidden = true;
@@ -1576,7 +1693,8 @@ body {
       hoistWeekly: hoist,
       layout: el('layout').value,
       fontScale: scaleValue === 'auto' ? 'auto' : Number(scaleValue),
-      categoriesOf: LinqMenu.categoriesByRecipe(rows)
+      categoriesOf: LinqMenu.categoriesByRecipe(rows),
+      notes: notes
     });
 
     el('page-css').textContent = out.css;
@@ -1650,6 +1768,7 @@ body {
       layout: el('layout').value,
       scale: el('scale').value,
       hoist: el('hoist').value,
+      fromToday: el('from-today').checked,
       title: el('title').value,
       building: el('building').value,
       district: el('district').value,
@@ -1716,6 +1835,7 @@ body {
   if (prefs.layout) el('layout').value = prefs.layout;
   if (prefs.scale) el('scale').value = prefs.scale;
   if (prefs.hoist) el('hoist').value = prefs.hoist;
+  if (typeof prefs.fromToday === 'boolean') el('from-today').checked = prefs.fromToday;
 
   el('load').addEventListener('click', load);
   el('identifier').addEventListener('input', function () {
@@ -1762,6 +1882,7 @@ body {
   });
   // A text field needs `input`, not `change`, to preview and save as you type.
   el('title').addEventListener('input', render);
+  el('from-today').addEventListener('change', render);
 
   clearStatus();
 })();
