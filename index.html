@@ -1,0 +1,1722 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>School Menu Builder</title>
+<style>
+/* ---- Builder chrome. None of this prints. ---- */
+:root {
+  --ui-ink: #1a1d23;
+  --ui-muted: #6b7280;
+  --ui-line: #d7dbe2;
+  --ui-bg: #eef0f4;
+  --ui-panel: #fff;
+  --ui-accent: #1d4f7a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ui-bg);
+  color: var(--ui-ink);
+  font: 14px/1.45 "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.builder {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 0;
+}
+.builder h1 { font-size: 1.25rem; margin: 0 0 0.25rem; }
+.builder .lede { color: var(--ui-muted); margin: 0 0 1.25rem; }
+
+fieldset {
+  border: 1px solid var(--ui-line);
+  border-radius: 6px;
+  background: var(--ui-panel);
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem 1rem;
+}
+legend {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ui-muted);
+  padding: 0 0.35rem;
+}
+.row { display: flex; flex-wrap: wrap; gap: 0.85rem 1.25rem; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 0.25rem; }
+.field > span { font-size: 0.75rem; color: var(--ui-muted); }
+input[type="text"], input[type="date"], select {
+  font: inherit;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--ui-line);
+  border-radius: 4px;
+  background: #fff;
+  color: inherit;
+}
+input[type="text"].guid { width: 21rem; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem; }
+#building { max-width: 20rem; }
+input[type="text"].guid.short { width: 7rem; }
+
+.source-link { margin: 0.7rem 0 0; font-size: 0.8rem; }
+.source-link a { color: var(--ui-accent); }
+.source-link a::after { content: " \2197"; }
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--ui-accent);
+  border-radius: 4px;
+  background: var(--ui-accent);
+  color: #fff;
+  cursor: pointer;
+}
+button.secondary { background: #fff; color: var(--ui-accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+.checks { display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; }
+.checks label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.checks .count { color: var(--ui-muted); font-size: 0.75rem; }
+.checks .raw { color: var(--ui-muted); font-size: 0.75rem; }
+.hint { color: var(--ui-muted); font-size: 0.78rem; margin: 0.6rem 0 0; }
+.check-actions { margin-top: 0.6rem; display: flex; gap: 0.5rem; }
+.check-actions button { font-size: 0.75rem; padding: 0.2rem 0.5rem; font-weight: 500; }
+
+#status { margin: 0 0 1rem; padding: 0.6rem 0.8rem; border-radius: 5px; font-size: 0.86rem; display: none; }
+#status.show { display: block; }
+#status.info { background: #e7f0f7; border: 1px solid #b9d4e6; }
+#status.error { background: #fdecec; border: 1px solid #f0bcbc; }
+#status.ok { background: #e9f5ec; border: 1px solid #b9dfc3; }
+#status code {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: #fff;
+  border: 1px solid var(--ui-line);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.preview-head {
+  max-width: 62rem;
+  margin: 0.5rem auto 0;
+  padding: 0 1rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+.preview-head h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ui-muted); margin: 0; }
+.preview-head .meta { font-size: 0.78rem; color: var(--ui-muted); }
+
+#preview { padding: 0.5rem 0 2rem; overflow-x: auto; }
+#preview:empty { display: none; }
+
+/* Hovering a category marks the items that excluding it would remove. An item
+   in another still-included category is not marked, because it would survive. */
+.checks label:hover { background: #eef4f9; border-radius: 3px; }
+.hover-report { font-weight: 600; }
+.hover-report.none { font-weight: 400; }
+
+/* The idle hint and the hover report share one grid cell, so the slot is
+   always as tall as the taller of the two and swapping them cannot change the
+   page height. Toggling `display` here would resize the page mid-hover, which
+   at the bottom of a short viewport slides the label out from under the
+   cursor, fires mouseleave, restores the taller hint, and loops. Hence
+   visibility, and hence the reserved two lines. */
+.hover-slot {
+  display: grid;
+  margin-top: 0.6rem;
+  min-height: calc(2 * 0.78rem * 1.45);
+}
+.hover-slot > .hint {
+  grid-area: 1 / 1;
+  margin: 0;
+  line-height: 1.45;
+}
+.hover-slot > .is-hidden { visibility: hidden; }
+
+#preview .will-drop {
+  background: #fde3e3;
+  box-shadow: 0 0 0 1.5pt #fde3e3;
+  border-radius: 2pt;
+}
+#preview li.will-drop { display: list-item; }
+
+.overflow-wrap { max-width: 62rem; margin: 0 auto; padding: 0 1rem; }
+#overflow {
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 5px;
+  font-size: 0.84rem;
+  background: #fff6e5;
+  border: 1px solid #edd39a;
+}
+#overflow strong { display: block; }
+#overflow .fix { color: var(--ui-muted); }
+
+@media print {
+  /* Everything but the rendered pages disappears, so Cmd-P prints the menu. */
+  .builder, .preview-head, .overflow-wrap { display: none !important; }
+  body { background: #fff; padding: 0; }
+  #preview { padding: 0; overflow: visible; }
+  /* A hover highlight left behind must never reach the paper. */
+  #preview .will-drop { background: none; box-shadow: none; }
+}
+</style>
+<!-- The print stylesheet is produced by the renderer and injected here. -->
+<style id="page-css"></style>
+</head>
+<body>
+
+<div class="builder">
+  <h1>School Menu Builder</h1>
+  <p class="lede">Loads a LINQ Connect menu, then prints a landscape 8.5x11 calendar.</p>
+
+  <div id="status"></div>
+
+  <fieldset>
+    <legend>Source</legend>
+    <div class="row">
+      <label class="field"><span>Start date</span><input type="date" id="start"></label>
+      <label class="field"><span>End date</span><input type="date" id="end"></label>
+      <label class="field"><span>School</span><select id="building"></select></label>
+      <button id="load">Load menu</button>
+      <button class="secondary" id="pick" hidden>Open saved JSON&hellip;</button>
+      <input type="file" id="file" accept=".json,application/json" hidden>
+    </div>
+    <p class="source-link">
+      <a id="live-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+    </p>
+    <details id="ids" hidden>
+      <summary class="hint">District IDs</summary>
+      <div class="row" style="margin-top:0.6rem">
+        <label class="field"><span>districtId</span><input type="text" class="guid" id="district"></label>
+        <label class="field"><span>Identifier</span><input type="text" class="guid short" id="identifier"></label>
+        <label class="field"><span>linq-nutrition-url</span><input type="text" class="guid" id="nutrition"></label>
+      </div>
+    </details>
+  </fieldset>
+
+  <fieldset id="sessions-box" hidden>
+    <legend>Meals to include</legend>
+    <div class="checks" id="sessions"></div>
+  </fieldset>
+
+  <fieldset id="categories-box" hidden>
+    <legend>Categories to include</legend>
+    <div class="checks" id="categories"></div>
+    <div class="check-actions">
+      <button type="button" class="secondary" id="cats-all">Select all</button>
+      <button type="button" class="secondary" id="cats-none">Select none</button>
+    </div>
+    <div class="hover-slot">
+      <p class="hint" id="cat-hover-idle">Hover a category to highlight what it would
+        remove from the menu. Condiments starts off, since a printed calendar rarely
+        needs "Sour Cream Cup" on three separate days.</p>
+      <p class="hint hover-report is-hidden" id="cat-hover"></p>
+    </div>
+  </fieldset>
+
+  <fieldset id="output-box" hidden>
+    <legend>Output</legend>
+    <div class="row">
+      <label class="field"><span>Title</span><input type="text" id="title" value="School Menu"></label>
+      <label class="field"><span>Layout</span>
+        <select id="layout">
+          <option value="month">One page per month</option>
+          <option value="week">One page per week (larger type)</option>
+        </select>
+      </label>
+      <label class="field"><span>Text size</span>
+        <select id="scale">
+          <option value="auto">Auto-fit to page</option>
+          <option value="1.4">Largest</option>
+          <option value="1.2">Larger</option>
+          <option value="1">Normal</option>
+          <option value="0.85">Smaller</option>
+        </select>
+      </label>
+      <label class="field"><span>Repeated items</span>
+        <select id="hoist">
+          <option value="hoist">Collapse into footnotes</option>
+          <option value="all">List in every day</option>
+        </select>
+      </label>
+      <button id="print">Print</button>
+    </div>
+    <p class="hint">Print with <strong>Landscape</strong> orientation and
+      <strong>background graphics</strong> enabled.</p>
+  </fieldset>
+</div>
+
+<div class="preview-head" id="preview-head" hidden>
+  <h2>Preview</h2>
+  <span class="meta" id="preview-meta"></span>
+</div>
+<div class="overflow-wrap"><div id="overflow" hidden></div></div>
+<div id="preview"></div>
+
+<script>
+/* linq-bundle:start */
+// Bundled from src/buildings.js, src/parse.js, src/render.js by bin/build-page.js.
+// Edit those files, not this copy, then re-run: node bin/build-page.js
+var LinqMenu = (function () {
+// The district's schools, as served by LINQ's own district lookup. Kept here so
+// the CLI defaults and the static page's school picker share one list.
+const DISTRICT = {
+  districtId: '7810c14e-a7e4-eb11-a2c5-8cc0b3a2728d',
+  districtName: 'Somerville Public Schools',
+  nutritionUrl: '9ce8fcc0-1c59-43a3-bbe4-24eeb5d615d2',
+  // Short public code in the district's linqconnect.com menu URLs.
+  identifier: 'FE53U3',
+};
+
+/** The public LINQ Connect page a printed menu was built from. */
+function publicMenuUrl({ identifier, buildingId }) {
+  return (
+    `https://linqconnect.com/public/menu/${encodeURIComponent(identifier)}` +
+    `?buildingId=${encodeURIComponent(buildingId)}`
+  );
+}
+
+const BUILDINGS = [
+  { buildingId: '14d70caa-49e6-eb11-a2c9-fa7552227e36', name: 'Arthur D. Healey School' },
+  { buildingId: '59cfde2c-49e6-eb11-a2c9-dbdb67567338', name: 'Benjamin G. Brown School' },
+  {
+    buildingId: '023d91ad-48e6-eb11-a2c9-dbdb67567338',
+    name: 'Dr. Albert F. Argenziano School @ Lincoln Park',
+  },
+  { buildingId: '7de70f5f-49e6-eb11-a2c9-d2abdd85801a', name: 'East Somerville Community School' },
+  { buildingId: 'fbb196b1-c4f0-eb11-a2c6-ec93cfcf30fc', name: 'Full Circle School' },
+  { buildingId: '2c11d9d9-4ae6-eb11-a2c9-fa7a926e4a5b', name: 'John F. Kennedy School' },
+  {
+    buildingId: '2392b58e-48e6-eb11-a2c9-d2abdd85801a',
+    name: 'Michael E. Capuano Early Childhood Center',
+  },
+  { buildingId: '04ee3e52-4ce6-eb11-a2c9-c59ac59649a5', name: 'Next Wave School' },
+  { buildingId: '9b4c5b79-4ce6-eb11-a2c9-fa7a926e4a5b', name: 'Somerville High School' },
+  {
+    buildingId: 'dc643b2d-4be6-eb11-a2c9-d2abdd85801a',
+    name: 'West Somerville Neighborhood School',
+  },
+  {
+    buildingId: '2376e66c-4be6-eb11-a2c9-b2dd5b88e299',
+    name: 'Winter Hill Community Innovation School',
+  },
+];
+
+/** The school selected when nothing else is specified. */
+const DEFAULT_BUILDING_ID = '2c11d9d9-4ae6-eb11-a2c9-fa7a926e4a5b';
+
+// The LINQ FamilyMenu payload nests as roughly:
+//   FamilyMenuSessions[] -> ServingSession ("Breakfast" | "Lunch" | "Snack")
+//     MenuPlans[] -> Days[] -> Date
+//       MenuMeals[] -> MenuMealName
+//         RecipeCategories[] -> CategoryName
+//           Recipes[] -> RecipeName
+//
+// Rather than hard-coding that exact chain, walk the tree and carry the
+// contextual fields down. Any reshuffling of the intermediate containers
+// (extra wrappers, a missing MenuPlans level) still parses correctly.
+
+const CONTEXT_KEYS = {
+  ServingSession: 'session',
+  MenuMealName: 'meal',
+  CategoryName: 'category',
+};
+
+/**
+ * Flatten a FamilyMenu payload into { date, session, meal, category, recipe } rows.
+ * @param {unknown} payload parsed JSON from the FamilyMenu endpoint
+ * @returns {Array<{date: string, session: string, meal: string, category: string, recipe: string}>}
+ */
+function flattenRecipes(payload) {
+  const rows = [];
+  walk(payload, {}, rows);
+  return rows;
+}
+
+function walk(node, ctx, rows) {
+  if (Array.isArray(node)) {
+    for (const item of node) walk(item, ctx, rows);
+    return;
+  }
+  if (node === null || typeof node !== 'object') return;
+
+  let next = ctx;
+  for (const [key, field] of Object.entries(CONTEXT_KEYS)) {
+    if (typeof node[key] === 'string' && node[key].trim()) {
+      next = { ...next, [field]: node[key].trim() };
+    }
+  }
+  if (node.Date) {
+    const date = parseDate(node.Date);
+    if (date) next = { ...next, date };
+  }
+
+  const recipe = typeof node.RecipeName === 'string' ? node.RecipeName.trim() : '';
+  if (recipe) {
+    // A recipe's own subtree is nutrients/allergens, never more menu structure.
+    rows.push({
+      date: next.date ?? '',
+      session: next.session ?? next.meal ?? '',
+      meal: next.meal ?? '',
+      category: next.category ?? '',
+      recipe,
+    });
+    return;
+  }
+
+  for (const value of Object.values(node)) walk(value, next, rows);
+}
+
+/**
+ * Parse the date formats LINQ emits into a local YYYY-MM-DD key.
+ * Handles "8/31/2026", "08/31/2026", and ISO "2026-08-31T00:00:00".
+ */
+function parseDate(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+
+  const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (slash) {
+    const [, m, d, y] = slash;
+    return `${y}-${pad(m)}-${pad(d)}`;
+  }
+
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  return null;
+}
+
+function pad(n) {
+  return String(n).padStart(2, '0');
+}
+
+/** Map a raw serving-session label onto one of our canonical buckets. */
+function classifySession(session) {
+  const s = session.toLowerCase();
+  if (s.includes('breakfast')) return 'breakfast';
+  if (s.includes('lunch')) return 'lunch';
+  if (s.includes('snack')) return 'snack';
+  return session.toLowerCase();
+}
+
+/**
+ * Group flattened rows into a date-keyed calendar.
+ * @returns {Map<string, Map<string, string[]>>} date -> session -> recipe names
+ */
+function groupByDate(rows, { skipCategories = [] } = {}) {
+  const skip = new Set(skipCategories.map((c) => c.trim().toLowerCase()).filter(Boolean));
+  const byDate = new Map();
+
+  for (const row of rows) {
+    if (!row.date || !row.session) continue;
+    if (skip.has(row.category.toLowerCase())) continue;
+
+    const session = classifySession(row.session);
+    if (!byDate.has(row.date)) byDate.set(row.date, new Map());
+    const sessions = byDate.get(row.date);
+    if (!sessions.has(session)) sessions.set(session, []);
+
+    const items = sessions.get(session);
+    // The same recipe can appear under several categories or menu plans.
+    if (!items.includes(row.recipe)) items.push(row.recipe);
+  }
+
+  return new Map([...byDate].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/**
+ * Which categories each recipe is served under. A recipe can appear in several
+ * ("Cheese Pizza" as both Hot Entree and Deli), which is why the printed page
+ * tags items with every one: an item only disappears when all of its
+ * categories are excluded.
+ *
+ * @returns {Map<string, string[]>} recipe name -> category names
+ */
+function categoriesByRecipe(rows) {
+  const map = new Map();
+  for (const row of rows) {
+    if (!row.recipe || !row.category) continue;
+    if (!map.has(row.recipe)) map.set(row.recipe, []);
+    const list = map.get(row.recipe);
+    if (!list.includes(row.category)) list.push(row.category);
+  }
+  return map;
+}
+
+/** Every recipe category present in the rows, in menu order then alphabetical. */
+function collectCategories(rows) {
+  return [...new Set(rows.map((r) => r.category).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b)
+  );
+}
+
+/**
+ * The serving sessions present, keyed by the bucket they render under.
+ * "Afterschool Snack" and "AM Snack" both bucket to `snack`, so the raw labels
+ * are kept alongside to show what a bucket actually covers.
+ *
+ * @returns {Array<{session: string, label: string, raw: string[], days: number}>}
+ */
+function collectSessions(rows) {
+  const found = new Map();
+  for (const row of rows) {
+    if (!row.session) continue;
+    const session = classifySession(row.session);
+    if (!found.has(session)) found.set(session, { raw: new Set(), dates: new Set() });
+    const entry = found.get(session);
+    entry.raw.add(row.session);
+    if (row.date) entry.dates.add(row.date);
+  }
+
+  return [...found]
+    .map(([session, { raw, dates }]) => ({
+      session,
+      raw: [...raw].sort(),
+      label: [...raw].sort().join(' / '),
+      days: dates.size,
+    }))
+    .sort((a, b) => sessionRank(a.session) - sessionRank(b.session));
+}
+
+const SESSION_ORDER = ['breakfast', 'lunch', 'snack'];
+
+/** Meal order for display; anything unrecognized sorts after the known meals. */
+function sessionRank(session) {
+  const i = SESSION_ORDER.indexOf(session);
+  return i === -1 ? SESSION_ORDER.length : i;
+}
+
+/** Convenience wrapper: payload in, calendar out. */
+function parseMenu(payload, options) {
+  return groupByDate(flattenRecipes(payload), options);
+}
+
+/**
+ * Split out the items a session offers every single day (milk, the salad bar,
+ * assorted fruit). They are most of the volume and none of the information, so
+ * the printable calendar lists them once in a footer instead of in every cell.
+ *
+ * @returns {{calendar: Map, staples: Map<string, string[]>}} a calendar with the
+ *   staples removed, plus session -> staple names.
+ */
+function splitStaples(calendar, options) {
+  const staples = repeatsAcross([...calendar.values()], options);
+  return { calendar: removeItems(calendar, staples), staples };
+}
+
+/**
+ * Find the items a session offers on every one of the given days.
+ * @param {Array<Map<string, string[]>>} dayMenus session -> recipes, one per day
+ * @returns {Map<string, string[]>} session -> items present on all of its days
+ */
+function repeatsAcross(dayMenus, { minDays = 3 } = {}) {
+  const counts = new Map(); // session -> Map(recipe -> day count)
+  const dayCounts = new Map(); // session -> days it appears on
+
+  for (const sessions of dayMenus) {
+    for (const [session, items] of sessions) {
+      dayCounts.set(session, (dayCounts.get(session) ?? 0) + 1);
+      if (!counts.has(session)) counts.set(session, new Map());
+      const tally = counts.get(session);
+      for (const item of items) tally.set(item, (tally.get(item) ?? 0) + 1);
+    }
+  }
+
+  const repeats = new Map();
+  for (const [session, tally] of counts) {
+    const days = dayCounts.get(session);
+    if (days < minDays) continue;
+    const everyDay = [...tally].filter(([, n]) => n === days).map(([item]) => item);
+    if (everyDay.length) repeats.set(session, everyDay);
+  }
+  return repeats;
+}
+
+/** Return a copy of `calendar` with the given session -> items removed. */
+function removeItems(calendar, toRemove) {
+  const trimmed = new Map();
+  for (const [date, sessions] of calendar) {
+    const kept = new Map();
+    for (const [session, items] of sessions) {
+      const drop = new Set(toRemove.get(session) ?? []);
+      const remaining = items.filter((i) => !drop.has(i));
+      if (remaining.length) kept.set(session, remaining);
+    }
+    trimmed.set(date, kept);
+  }
+  return trimmed;
+}
+
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const SESSION_LABELS = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  snack: 'Snack',
+};
+
+/**
+ * Render the calendar's printable pages and the stylesheet they need, for
+ * embedding in a host document.
+ *
+ * @param {Map<string, Map<string, string[]>>} calendar date -> session -> recipes
+ * @param {{title?: string, subtitle?: string, sessions?: string[],
+ *   fontScale?: number|'auto', staples?: Map<string, string[]>,
+ *   hoistWeekly?: boolean, layout?: 'month'|'week',
+ *   categoriesOf?: Map<string, string[]>}} options
+ * @returns {{css: string, body: string, scale: number}}
+ */
+function renderPages(calendar, options = {}) {
+  const {
+    title = 'School Menu',
+    subtitle = '',
+    sessions = ['breakfast', 'lunch'],
+    fontScale = 'auto',
+    staples = new Map(),
+    hoistWeekly = true,
+    layout = 'month',
+    categoriesOf = null,
+  } = options;
+
+  const dates = [...calendar.keys()];
+  const showWeekends = dates.some((d) => {
+    const day = toDate(d).getDay();
+    return day === 0 || day === 6;
+  });
+  const columns = showWeekends ? [0, 1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5];
+
+  const months = buildLayout(calendar, columns, hoistWeekly);
+  // In week layout each page holds a single week, so fit against that instead.
+  const fitUnits = layout === 'week' ? splitPerWeek(months) : months;
+  const scale =
+    fontScale === 'auto' ? fitFontScale(fitUnits, columns, sessions, staples) : fontScale;
+  const footer = renderStaples(staples, sessions, categoriesOf);
+
+  const pages = fitUnits.map((unit) =>
+    renderPage(unit, columns, sessions, { title, subtitle, footer, layout, categoriesOf })
+  );
+
+  return {
+    css: styles(scale),
+    body: pages.join('\n') || '<p class="empty">No menu data for this date range.</p>',
+    scale,
+  };
+}
+
+/**
+ * Render the calendar as a standalone printable HTML document: landscape
+ * letter, one page per month.
+ */
+function renderCalendar(calendar, options = {}) {
+  const { css, body } = renderPages(calendar, options);
+  const title = options.title ?? 'School Menu';
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${escapeHtml(title)}</title>
+<style>${css}</style>
+</head>
+<body>
+${body}
+</body>
+</html>
+`;
+}
+
+// ---------------------------------------------------------------------------
+// Layout: months -> week rows -> cells, with per-week repeats hoisted out.
+// ---------------------------------------------------------------------------
+
+function buildLayout(calendar, columns, hoistWeekly) {
+  const dates = [...calendar.keys()].sort();
+  if (dates.length === 0) return [];
+
+  const weeks = buildWeeks(toDate(dates[0]), toDate(dates[dates.length - 1]), columns).map(
+    (weekDates) => {
+      const menus = new Map();
+      for (const date of weekDates) {
+        const menu = calendar.get(toKey(date));
+        if (menu) menus.set(toKey(date), menu);
+      }
+
+      // Items offered on every day of this week (the rotating salad bar, the
+      // week's sandwich option) say the same thing five times in a row. Hoist
+      // them into a single note under the week.
+      const repeats = hoistWeekly ? repeatsAcross([...menus.values()]) : new Map();
+      const cells = new Map();
+      for (const [key, menu] of menus) {
+        const kept = new Map();
+        for (const [session, items] of menu) {
+          const drop = new Set(repeats.get(session) ?? []);
+          const remaining = items.filter((i) => !drop.has(i));
+          if (remaining.length) kept.set(session, remaining);
+        }
+        cells.set(key, kept);
+      }
+
+      return { dates: weekDates, cells, repeats, month: assignMonth(weekDates, calendar) };
+    }
+  );
+
+  // Group consecutive weeks into month pages. A week is printed once, on the
+  // page for the month that owns most of its menu days, so a range starting on
+  // a Monday the 31st does not produce a near-empty page for that month.
+  const months = [];
+  for (const week of weeks) {
+    const last = months[months.length - 1];
+    if (last && last.year === week.month.year && last.month === week.month.month) {
+      last.weeks.push(week);
+    } else {
+      months.push({ year: week.month.year, month: week.month.month, weeks: [week] });
+    }
+  }
+  return months;
+}
+
+/** The month owning most of a week's menu days, falling back to its weekdays. */
+function assignMonth(weekDates, calendar) {
+  const tally = new Map();
+  const count = (date) => {
+    const key = date.getFullYear() * 12 + date.getMonth();
+    tally.set(key, (tally.get(key) ?? 0) + 1);
+  };
+
+  const withData = weekDates.filter((d) => calendar.has(toKey(d)));
+  for (const date of withData.length ? withData : weekDates) count(date);
+
+  // Ties go to the earlier month, keeping pages in calendar order.
+  const [winner] = [...tally].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+  return { year: Math.floor(winner / 12), month: (winner % 12) + 1 };
+}
+
+/** Turn each month unit into one unit per week, for the week-per-page layout. */
+function splitPerWeek(months) {
+  return months.flatMap(({ year, month, weeks }) =>
+    weeks.map((week) => ({ year, month, weeks: [week] }))
+  );
+}
+
+/** Week rows covering first..last, each row holding one date per column. */
+function buildWeeks(first, last, columns) {
+  const cursor = new Date(first);
+  while (cursor.getDay() !== columns[0]) cursor.setDate(cursor.getDate() - 1);
+
+  const weeks = [];
+  while (cursor <= last) {
+    const week = [];
+    for (const col of columns) {
+      while (cursor.getDay() !== col) cursor.setDate(cursor.getDate() + 1);
+      week.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    weeks.push(week);
+  }
+  return weeks;
+}
+
+// ---------------------------------------------------------------------------
+// Markup
+// ---------------------------------------------------------------------------
+
+function renderPage(
+  { year, month, weeks },
+  columns,
+  sessions,
+  { title, subtitle, footer, layout, categoriesOf }
+) {
+  const headerCells = columns.map((c) => `<th>${DAY_NAMES[c]}</th>`).join('');
+  const sub = subtitle ? `<div class="subtitle">${escapeHtml(subtitle)}</div>` : '';
+
+  // In week layout every cell belongs to the page, even across a month border.
+  const shadeMonth = layout === 'week' ? null : month;
+
+  const bodyRows = weeks
+    .map((week) => {
+      const cells = week.dates
+        .map((date) => renderCell(date, shadeMonth, week.cells, sessions, categoriesOf))
+        .join('');
+      return `<tr>${cells}</tr>${renderWeekNote(week.repeats, sessions, columns.length, categoriesOf)}`;
+    })
+    .join('\n');
+
+  const heading =
+    layout === 'week'
+      ? `Week of ${MONTH_NAMES[weeks[0].dates[0].getMonth()]} ${weeks[0].dates[0].getDate()}, ${weeks[0].dates[0].getFullYear()}`
+      : `${MONTH_NAMES[month - 1]} ${year}`;
+
+  return `<section class="page layout-${layout}">
+  <header class="page-head">
+    <h1>${escapeHtml(title)}</h1>
+    <div class="month">${heading}</div>
+    ${sub}
+  </header>
+  <table class="calendar">
+    <thead><tr>${headerCells}</tr></thead>
+    <tbody>
+${bodyRows}
+    </tbody>
+  </table>
+  ${footer}
+</section>`;
+}
+
+function renderCell(date, month, cells, sessions, categoriesOf) {
+  const dayMenu = cells.get(toKey(date));
+  const blocks = sessions
+    .map((session) => {
+      const items = dayMenu?.get(session);
+      if (!items || items.length === 0) return '';
+      const label = SESSION_LABELS[session] ?? capitalize(session);
+      const list = items
+        .map((i) => `<li${categoryAttr(i, categoriesOf)}>${escapeHtml(i)}</li>`)
+        .join('');
+      return `<div class="meal meal-${sessionSlug(session)}"><span class="meal-label">${escapeHtml(label)}</span><ul>${list}</ul></div>`;
+    })
+    .filter(Boolean)
+    .join('');
+
+  const classes = ['cell'];
+  if (month !== null && date.getMonth() + 1 !== month) classes.push('outside');
+  if (!blocks) classes.push('blank');
+
+  return `<td class="${classes.join(' ')}"><div class="daynum">${date.getDate()}</div>${blocks}</td>`;
+}
+
+function renderWeekNote(repeats, sessions, colSpan, categoriesOf) {
+  const parts = sessions
+    .map((session) => {
+      const items = repeats.get(session);
+      if (!items || items.length === 0) return '';
+      const label = SESSION_LABELS[session] ?? capitalize(session);
+      const listed = items
+        .map((name) => `<span class="note-item"${categoryAttr(name, categoriesOf)}>${escapeHtml(name)}</span>`)
+        .join(' · ');
+      return `<span class="note-part meal-${sessionSlug(session)}"><span class="meal-label">${escapeHtml(label)}</span> ${listed}</span>`;
+    })
+    .filter(Boolean);
+
+  if (parts.length === 0) return '';
+  return `<tr class="week-note"><td colspan="${colSpan}"><span class="note-lead">All week</span>${parts.join('')}</td></tr>`;
+}
+
+function renderStaples(staples, sessions, categoriesOf) {
+  const rows = sessions
+    .map((session) => {
+      const items = staples.get(session);
+      if (!items || items.length === 0) return '';
+      const label = SESSION_LABELS[session] ?? capitalize(session);
+      const listed = items
+        .map((name) => `<span class="note-item"${categoryAttr(name, categoriesOf)}>${escapeHtml(name)}</span>`)
+        .join(' · ');
+      return `<div class="staple-row meal-${sessionSlug(session)}"><span class="meal-label">${escapeHtml(label)}</span><span>${listed}</span></div>`;
+    })
+    .filter(Boolean);
+
+  if (rows.length === 0) return '';
+  return `<footer class="staples">
+    <div class="staples-title">Offered every day</div>
+    ${rows.join('\n    ')}
+  </footer>`;
+}
+
+/**
+ * Tag an item with every category it is served under, so a host page can show
+ * what excluding a category would remove. Pipe-separated because category
+ * names contain spaces. Omitted entirely when no map was supplied, keeping the
+ * CLI's output byte-identical.
+ */
+function categoryAttr(name, categoriesOf) {
+  const categories = categoriesOf?.get(name);
+  if (!categories || categories.length === 0) return '';
+  return ` data-categories="${escapeHtml(categories.join('|'))}"`;
+}
+
+// ---------------------------------------------------------------------------
+// Fitting one month per page
+// ---------------------------------------------------------------------------
+
+// Page geometry, spelled out because getting it wrong silently shrinks the
+// type. Letter is 8.5x11in, so landscape is 11in wide and 8.5in TALL; the
+// @page margin comes off both edges. Verified by counting sheets in Chromium's
+// PDF output: content just under this budget prints on one sheet, just over
+// prints on two.
+const PRINT_GEOMETRY = {
+  paperHeightIn: 8.5, // landscape letter: the short edge is the height
+  paperWidthIn: 11,
+  marginIn: 0.35, // @page margin
+  paddingIn: 0.15, // .page vertical padding, inside the printable area
+};
+
+const printableHeightIn =
+  PRINT_GEOMETRY.paperHeightIn - 2 * PRINT_GEOMETRY.marginIn; // 7.8in
+
+/** Height available to a page's content box, in inches. */
+const CONTENT_HEIGHT_IN = printableHeightIn - 2 * PRINT_GEOMETRY.paddingIn; // 7.5in
+
+/** Width available to a page's content box, in inches. */
+const CONTENT_INCHES = PRINT_GEOMETRY.paperWidthIn - 2 * PRINT_GEOMETRY.marginIn; // 10.3in
+
+// Everything below is in typographic points. A little slack keeps a browser's
+// own rounding from spilling a page.
+const PAGE_HEIGHT = CONTENT_HEIGHT_IN * 72 - 5;
+
+/**
+ * Pick the largest font scale at which every month still fits on one page.
+ *
+ * Cell height is predictable because we generated the markup, so the font
+ * sizes, line heights and padding are known. The one estimate is how many
+ * lines a long recipe name wraps to, derived from its character count against
+ * the column width.
+ */
+function fitFontScale(months, columns, sessions, staples) {
+  // Search downward from the largest sane size. The CSS minimum cell height
+  // scales too, so a sparse page stops growing once its rows fill the sheet.
+  for (let scale = 1.6; scale > 0.7; scale -= 0.02) {
+    const budget = PAGE_HEIGHT - chromeHeight(scale, sessions, staples);
+    const fits = months.every(({ weeks }) => {
+      const height = weeks.reduce(
+        (total, week) =>
+          total +
+          Math.max(
+            ...week.dates.map((d) => cellHeight(week.cells.get(toKey(d)), sessions, scale, columns.length))
+          ) +
+          weekNoteHeight(week.repeats, sessions, scale, columns.length),
+        0
+      );
+      if (typeof process !== 'undefined' && process.env?.LINQ_DEBUG_FIT) {
+        console.error(`  scale ${scale.toFixed(2)}: est ${((height + chromeHeight(scale, sessions, staples) + 21.6) / 72).toFixed(3)}in`);
+      }
+      return height <= budget;
+    });
+    if (fits) return Number(scale.toFixed(2));
+  }
+  return 0.7;
+}
+
+/** Page header, weekday header row and the staples footer. */
+function chromeHeight(scale, sessions, staples) {
+  const header = 13 * 1.2 + 4 + 1.5 + 7;
+  const weekdayRow = 7.5 * 1.2 + 3 + 1;
+  const stapleRows = sessions.filter((s) => staples.get(s)?.length).length;
+  const footer = stapleRows === 0 ? 0 : 6 + 0.75 + 4 + 7 * 1.3 + 2 + stapleRows * 6.5 * scale * 1.35;
+  return header + weekdayRow + footer;
+}
+
+function charsPerLine(width, item) {
+  // Mixed-case Helvetica averages ~0.48em per character; measured against
+  // Chromium, this keeps the estimate just above the real rendered height.
+  return Math.max(10, Math.floor(width / (item * 0.48)));
+}
+
+function cellHeight(dayMenu, sessions, scale, columnCount) {
+  const item = 6.5 * scale;
+  const lineHeight = item * 1.25;
+  const chars = charsPerLine((CONTENT_INCHES / columnCount) * 72 - 8, item);
+
+  let height = 8 * scale * 1.2 + 2 + 7 + 1; // day number, cell padding, border
+  let blocks = 0;
+
+  for (const session of sessions) {
+    const items = dayMenu?.get(session);
+    if (!items || items.length === 0) continue;
+    blocks++;
+    height += 6 * scale * 1.35 + 0.5; // meal label
+    for (const name of items) {
+      height += Math.max(1, Math.ceil(name.length / chars)) * lineHeight;
+    }
+  }
+  height += Math.max(0, blocks - 1) * 2.5; // gaps between meal blocks
+
+  // Empty cells still occupy the CSS min-height.
+  return Math.max(height, 1.02 * 72 * scale);
+}
+
+function weekNoteHeight(repeats, sessions, scale, columnCount) {
+  const used = sessions.filter((s) => repeats.get(s)?.length);
+  if (used.length === 0) return 0;
+
+  const item = 6.5 * scale;
+  // "All week" lead plus each session's label and items, on one wrapping line.
+  const text =
+    9 + used.reduce((n, s) => n + 11 + repeats.get(s).join(' · ').length + 3, 0);
+  const chars = charsPerLine(CONTENT_INCHES * 72 - 10, item);
+  return Math.max(1, Math.ceil(text / chars)) * item * 1.3 + 5;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function toDate(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function toKey(date) {
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${m}-${d}`;
+}
+
+function capitalize(s) {
+  return s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+}
+
+/** CSS-class-safe form of a session key, which may be an arbitrary label. */
+function sessionSlug(session) {
+  return session.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function styles(fontScale) {
+  return `
+:root {
+  --item: ${(6.5 * fontScale).toFixed(2)}pt;
+  --label: ${(6 * fontScale).toFixed(2)}pt;
+  --cell-min: ${(1.02 * fontScale).toFixed(3)}in;
+  --daynum: ${(8 * fontScale).toFixed(2)}pt;
+  --indent: ${(5 * fontScale).toFixed(2)}pt;
+  --ink: #16181d;
+  --muted: #8a8f98;
+  --rule: #c8ccd4;
+  --breakfast: #7a4d00;
+  --lunch: #1d4f7a;
+  --snack: #4a5a2a;
+}
+
+@page {
+  size: letter landscape;
+  margin: 0.35in;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Typography is declared on .page, not body, so a host document's own font
+   size and line-height cannot leak in and change the layout. Several elements
+   below deliberately inherit line-height, and the height model assumes 1.2. */
+.page {
+  color: var(--ink);
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 10pt;
+  line-height: 1.2;
+  page-break-after: always;
+  break-after: page;
+  padding: 0.15in 0;
+}
+.page:last-child { page-break-after: auto; break-after: auto; }
+
+.page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.18in;
+  border-bottom: 1.5pt solid var(--ink);
+  padding-bottom: 4pt;
+  margin-bottom: 7pt;
+}
+.page-head h1 { font-size: 13pt; margin: 0; letter-spacing: 0.2pt; }
+.page-head .month { font-size: 11pt; color: var(--muted); }
+.page-head .subtitle { margin-left: auto; font-size: 8pt; color: var(--muted); }
+
+.calendar {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.calendar th {
+  font-size: 7.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.5pt;
+  color: var(--muted);
+  padding: 0 0 3pt;
+  text-align: left;
+  border-bottom: 0.75pt solid var(--rule);
+}
+
+.cell {
+  border: 0.5pt solid var(--rule);
+  vertical-align: top;
+  padding: 3pt 4pt 4pt;
+  height: var(--cell-min);
+  overflow: hidden;
+}
+.cell.outside { background: #f6f7f9; }
+.cell.outside .daynum { color: #c3c7ce; }
+
+.daynum {
+  font-size: var(--daynum);
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 2pt;
+}
+
+.meal { margin-bottom: 2.5pt; }
+.meal:last-child { margin-bottom: 0; }
+
+.meal-label {
+  font-size: var(--label);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.35pt;
+}
+.meal > .meal-label { display: block; }
+.meal-breakfast .meal-label { color: var(--breakfast); }
+.meal-lunch .meal-label { color: var(--lunch); }
+.meal-snack .meal-label { color: var(--snack); }
+
+.meal ul {
+  margin: 0.5pt 0 0;
+  padding: 0;
+  list-style: none;
+}
+.meal li {
+  font-size: var(--item);
+  line-height: 1.25;
+  /* Hanging indent so a wrapped item reads as one entry, not two. */
+  padding-left: var(--indent);
+  text-indent: calc(-1 * var(--indent));
+}
+
+.week-note td {
+  padding: 1.5pt 4pt 3pt;
+  font-size: var(--item);
+  line-height: 1.3;
+  border-left: 0.5pt solid var(--rule);
+  border-right: 0.5pt solid var(--rule);
+  border-bottom: 0.5pt solid var(--rule);
+  background: #fafbfc;
+}
+.note-lead {
+  font-size: var(--label);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.35pt;
+  color: var(--muted);
+  margin-right: 5pt;
+}
+.note-part { margin-right: 8pt; }
+.note-part .meal-label { margin-right: 2pt; }
+
+.staples {
+  margin-top: 6pt;
+  border-top: 0.75pt solid var(--rule);
+  padding-top: 4pt;
+}
+.staples-title {
+  font-size: 7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5pt;
+  color: var(--muted);
+  margin-bottom: 2pt;
+}
+.staple-row {
+  display: flex;
+  gap: 5pt;
+  font-size: var(--item);
+  line-height: 1.35;
+}
+.staple-row .meal-label {
+  flex: 0 0 0.62in;
+}
+
+.empty { padding: 1in; font-size: 12pt; text-align: center; color: var(--muted); }
+
+@media screen {
+  body { background: #e9ebef; padding: 24px; }
+  /* Full paper width with the @page margin as padding, so the content box is
+     exactly as wide as it will be in print. Anything narrower wraps text
+     differently and makes an on-screen height measurement useless. */
+  .page {
+    background: #fff;
+    width: ${PRINT_GEOMETRY.paperWidthIn}in;
+    margin: 0 auto 24px;
+    padding: ${PRINT_GEOMETRY.marginIn}in;
+    box-shadow: 0 1px 4px rgba(0,0,0,.18);
+  }
+}
+`;
+}
+
+  return { publicMenuUrl: publicMenuUrl, DISTRICT: DISTRICT, BUILDINGS: BUILDINGS, DEFAULT_BUILDING_ID: DEFAULT_BUILDING_ID, flattenRecipes: flattenRecipes, parseDate: parseDate, classifySession: classifySession, groupByDate: groupByDate, categoriesByRecipe: categoriesByRecipe, collectCategories: collectCategories, collectSessions: collectSessions, parseMenu: parseMenu, splitStaples: splitStaples, repeatsAcross: repeatsAcross, removeItems: removeItems, renderPages: renderPages, renderCalendar: renderCalendar, PRINT_GEOMETRY: PRINT_GEOMETRY, CONTENT_HEIGHT_IN: CONTENT_HEIGHT_IN, CONTENT_INCHES: CONTENT_INCHES };
+})();
+/* linq-bundle:end */
+
+(function () {
+  'use strict';
+
+  // District, school list and defaults all come from the bundled src/buildings.js.
+  var BUILDINGS = LinqMenu.BUILDINGS;
+  var DEFAULTS = {
+    buildingId: LinqMenu.DEFAULT_BUILDING_ID,
+    districtId: LinqMenu.DISTRICT.districtId,
+    nutritionUrl: LinqMenu.DISTRICT.nutritionUrl,
+    identifier: LinqMenu.DISTRICT.identifier
+  };
+  var SKIP_BY_DEFAULT = ['condiments'];
+  var STORE_KEY = 'linq-menu-builder';
+
+  // ?debug exposes the saved-JSON loader and the district IDs. Everyone else
+  // just picks a school and a date range.
+  var DEBUG = /[?&]debug(=|&|$)/.test(window.location.search);
+
+  var el = function (id) { return document.getElementById(id); };
+  var rows = null;        // flattened recipe rows from the last loaded payload
+  var payload = null;     // the raw response, kept so re-filtering needs no refetch
+  var loadedFrom = null;  // 'network' or 'file'
+  var hovered = null;     // category whose removal is being previewed
+
+  // -- persistence ---------------------------------------------------------
+  // Wrapped because a private window or blocked site data makes these throw.
+  function loadPrefs() {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+    catch (e) { return {}; }
+  }
+  function savePrefs(prefs) {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ }
+  }
+
+  function status(kind, html) {
+    var box = el('status');
+    box.className = 'show ' + kind;
+    box.innerHTML = html;
+  }
+  function clearStatus() {
+    el('status').className = '';
+  }
+
+  // -- dates --------------------------------------------------------------
+  function toApiDate(iso) {
+    var p = iso.split('-');
+    return Number(p[1]) + '-' + Number(p[2]) + '-' + p[0];
+  }
+  function isoToday(offsetDays) {
+    var d = new Date();
+    d.setDate(d.getDate() + (offsetDays || 0));
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+  }
+
+  function menuUrl() {
+    return 'https://api.linqconnect.com/api/FamilyMenu' +
+      '?buildingId=' + encodeURIComponent(el('building').value) +
+      '&districtId=' + encodeURIComponent(el('district').value.trim()) +
+      '&startDate=' + encodeURIComponent(toApiDate(el('start').value)) +
+      '&endDate=' + encodeURIComponent(toApiDate(el('end').value));
+  }
+
+  function curlCommand() {
+    return "curl --url '" + menuUrl() + "' \\\n" +
+      "  -H 'accept: application/json' \\\n" +
+      "  -H 'linq-nutrition-url: " + el('nutrition').value.trim() + "' \\\n" +
+      "  -H 'origin: https://linqconnect.com' > menu.json";
+  }
+
+  // -- loading ------------------------------------------------------------
+  //
+  // The endpoint wants a custom `linq-nutrition-url` header, which makes this a
+  // preflighted cross-origin request. If LINQ does not allow this page's origin
+  // the browser blocks it before any response arrives, and no amount of
+  // client-side code can work around that. So: try with the header, retry
+  // without it in case it is optional, then fall back to a saved file.
+  function load() {
+    if (!el('start').value || !el('end').value) {
+      status('error', 'Pick a start and end date first.');
+      return;
+    }
+    el('load').disabled = true;
+    status('info', 'Requesting the menu&hellip;');
+
+    var url = menuUrl();
+    var nutrition = el('nutrition').value.trim();
+
+    attempt(url, { 'linq-nutrition-url': nutrition })
+      .catch(function () { return attempt(url, null); })
+      .then(function (data) {
+        el('load').disabled = false;
+        loadedFrom = 'network';
+        adopt(data, schoolName() + ':');
+      })
+      .catch(function (err) {
+        el('load').disabled = false;
+        status('error',
+          '<strong>Could not load the menu in the browser.</strong><br>' +
+          escapeText(String(err && err.message || err)) +
+          '<br><br>This is normally the API refusing cross-origin requests from ' +
+          'this page, which the page cannot bypass. Fetch it once with curl and ' +
+          'use <em>Open saved JSON</em>:' +
+          '<code>' + escapeText(curlCommand()) + '</code>');
+      });
+  }
+
+  function attempt(url, headers) {
+    return fetch(url, {
+      headers: Object.assign({ accept: 'application/json, text/plain, */*' }, headers || {})
+    }).then(function (res) {
+      if (!res.ok) throw new Error('API returned ' + res.status + ' ' + res.statusText);
+      return res.json();
+    });
+  }
+
+  function openFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        loadedFrom = 'file';
+        adopt(JSON.parse(String(reader.result)), 'Loaded ' + file.name + '.');
+      } catch (e) {
+        status('error', 'That file is not valid JSON: ' + escapeText(e.message));
+      }
+    };
+    reader.onerror = function () { status('error', 'Could not read that file.'); };
+    reader.readAsText(file);
+  }
+
+  /** Take a freshly loaded payload, rebuild the controls, and render. */
+  function adopt(data, note) {
+    payload = data;
+    rows = LinqMenu.flattenRecipes(data);
+
+    if (rows.length === 0) {
+      status('error', 'The response parsed, but held no menu items. ' +
+        'Check the dates and the building/district IDs.');
+      return;
+    }
+
+    var prefs = loadPrefs();
+    buildSessionChecks(LinqMenu.collectSessions(rows), prefs.sessions);
+    buildCategoryChecks(LinqMenu.collectCategories(rows), prefs.categories);
+
+    el('sessions-box').hidden = false;
+    el('categories-box').hidden = false;
+    el('output-box').hidden = false;
+
+    var days = new Set(rows.map(function (r) { return r.date; }).filter(Boolean));
+    status('ok', note + ' ' + days.size + ' menu days, ' + rows.length + ' items.');
+    render();
+  }
+
+  // -- checkbox groups ----------------------------------------------------
+  function buildSessionChecks(found, remembered) {
+    var host = el('sessions');
+    host.innerHTML = '';
+
+    found.forEach(function (entry) {
+      // Default on for breakfast and lunch, matching the printed default.
+      var on = remembered && Object.prototype.hasOwnProperty.call(remembered, entry.session)
+        ? !!remembered[entry.session]
+        : entry.session === 'breakfast' || entry.session === 'lunch';
+
+      var label = document.createElement('label');
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.value = entry.session;
+      box.checked = on;
+      box.dataset.group = 'session';
+      box.addEventListener('change', render);
+      label.appendChild(box);
+
+      var name = document.createElement('span');
+      name.textContent = titleCase(entry.session);
+      label.appendChild(name);
+
+      // Show the API's own wording when it differs, e.g. "Afterschool Snack".
+      if (entry.raw.length !== 1 || entry.raw[0].toLowerCase() !== entry.session) {
+        var raw = document.createElement('span');
+        raw.className = 'raw';
+        raw.textContent = '(' + entry.raw.join(', ') + ')';
+        label.appendChild(raw);
+      }
+
+      var count = document.createElement('span');
+      count.className = 'count';
+      count.textContent = entry.days + 'd';
+      label.appendChild(count);
+
+      host.appendChild(label);
+    });
+  }
+
+  function buildCategoryChecks(categories, remembered) {
+    var host = el('categories');
+    host.innerHTML = '';
+
+    categories.forEach(function (category) {
+      var on = remembered && Object.prototype.hasOwnProperty.call(remembered, category)
+        ? !!remembered[category]
+        : SKIP_BY_DEFAULT.indexOf(category.toLowerCase()) === -1;
+
+      var label = document.createElement('label');
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.value = category;
+      box.checked = on;
+      box.dataset.group = 'category';
+      box.addEventListener('change', render);
+      label.appendChild(box);
+
+      var name = document.createElement('span');
+      name.textContent = category;
+      label.appendChild(name);
+
+      var enter = function () { hovered = category; previewDrop(category); };
+      var leave = function () { hovered = null; clearDrop(); };
+      label.addEventListener('mouseenter', enter);
+      label.addEventListener('mouseleave', leave);
+      // Keyboard users get the same preview when the box takes focus.
+      box.addEventListener('focus', enter);
+      box.addEventListener('blur', leave);
+
+      host.appendChild(label);
+    });
+  }
+
+  // -- "what would this remove?" preview ----------------------------------
+  //
+  // Every rendered item carries data-categories with all the categories it is
+  // served under. An item only disappears when none of its categories are
+  // included, so an item that also sits in another checked category is left
+  // unmarked rather than misleadingly highlighted.
+  function previewDrop(category) {
+    clearDrop();
+
+    var included = {};
+    checkedValues('category').forEach(function (c) { included[c] = true; });
+    var isIncluded = !!included[category];
+    var marked = 0;
+
+    if (isIncluded) {
+      Array.prototype.forEach.call(
+        document.querySelectorAll('#preview [data-categories]'),
+        function (node) {
+          var cats = node.getAttribute('data-categories').split('|');
+          if (cats.indexOf(category) === -1) return;
+          var survives = cats.some(function (c) { return c !== category && included[c]; });
+          if (!survives) {
+            node.classList.add('will-drop');
+            marked++;
+          }
+        }
+      );
+    }
+
+    // Both share a grid cell; swap visibility so the slot's height holds.
+    var report = el('cat-hover');
+    report.classList.remove('is-hidden');
+    el('cat-hover-idle').classList.add('is-hidden');
+
+    if (!isIncluded) {
+      report.classList.add('none');
+      report.textContent = category + ' is excluded. Check it to add ' +
+        countInCategory(category) + ' items back.';
+    } else if (marked === 0) {
+      report.classList.add('none');
+      report.textContent = 'Nothing would be lost: every ' + category +
+        ' item is also in another included category.';
+    } else {
+      report.classList.remove('none');
+      report.textContent = 'Unchecking ' + category + ' removes ' + marked +
+        (marked === 1 ? ' highlighted item.' : ' highlighted items.');
+    }
+  }
+
+  function clearDrop() {
+    Array.prototype.forEach.call(
+      document.querySelectorAll('#preview .will-drop'),
+      function (node) { node.classList.remove('will-drop'); }
+    );
+    el('cat-hover').classList.add('is-hidden');
+    el('cat-hover-idle').classList.remove('is-hidden');
+  }
+
+  /** Distinct recipes in a category, among the meals currently being printed. */
+  function countInCategory(category) {
+    if (!rows) return 0;
+    var sessions = {};
+    checkedValues('session').forEach(function (s) { sessions[s] = true; });
+    var names = {};
+    rows.forEach(function (row) {
+      if (row.category !== category) return;
+      if (!sessions[LinqMenu.classifySession(row.session)]) return;
+      names[row.recipe] = true;
+    });
+    return Object.keys(names).length;
+  }
+
+  function boxes(group) {
+    return Array.prototype.slice.call(
+      document.querySelectorAll('input[data-group="' + group + '"]')
+    );
+  }
+  function checkedValues(group) {
+    return boxes(group).filter(function (b) { return b.checked; })
+      .map(function (b) { return b.value; });
+  }
+  function uncheckedValues(group) {
+    return boxes(group).filter(function (b) { return !b.checked; })
+      .map(function (b) { return b.value; });
+  }
+
+  // -- rendering ----------------------------------------------------------
+  function render() {
+    if (!rows) return;
+
+    var sessions = checkedValues('session');
+    var skipCategories = uncheckedValues('category');
+    persist();
+
+    if (sessions.length === 0) {
+      el('preview').innerHTML = '';
+      el('preview-head').hidden = true;
+      el('overflow').hidden = true;
+      status('info', 'Pick at least one meal to print.');
+      return;
+    }
+
+    var calendar = LinqMenu.groupByDate(rows, { skipCategories: skipCategories });
+    if (calendar.size === 0) {
+      el('preview').innerHTML = '';
+      el('preview-head').hidden = true;
+      el('overflow').hidden = true;
+      status('info', 'Those filters leave nothing to print.');
+      return;
+    }
+
+    var hoist = el('hoist').value === 'hoist';
+    // With repeats listed inline there is no footer and no week note.
+    var split = hoist
+      ? LinqMenu.splitStaples(calendar)
+      : { calendar: calendar, staples: new Map() };
+
+    var scaleValue = el('scale').value;
+    var out = LinqMenu.renderPages(split.calendar, {
+      title: el('title').value || 'School Menu',
+      subtitle: formatRange(split.calendar),
+      sessions: sessions,
+      staples: split.staples,
+      hoistWeekly: hoist,
+      layout: el('layout').value,
+      fontScale: scaleValue === 'auto' ? 'auto' : Number(scaleValue),
+      categoriesOf: LinqMenu.categoriesByRecipe(rows)
+    });
+
+    el('page-css').textContent = out.css;
+    el('preview').innerHTML = out.body;
+    // Toggling a box while the pointer rests on it re-renders under the
+    // cursor, so re-apply the preview to the new markup.
+    if (hovered) previewDrop(hovered); else clearDrop();
+
+    var pageCount = el('preview').querySelectorAll('.page').length;
+    el('preview-head').hidden = false;
+    el('preview-meta').textContent =
+      pageCount + (pageCount === 1 ? ' page' : ' pages') +
+      ' · ' + (6.5 * out.scale).toFixed(1) + 'pt menu text';
+
+    checkOverflow();
+  }
+
+  // -- overflow check -----------------------------------------------------
+  //
+  // The renderer's auto-fit only estimates height. This measures the real
+  // laid-out pages, which is authoritative: the preview's content box is the
+  // same width as the printed one, so it wraps identically. A page taller than
+  // the printable area will spill onto a second sheet.
+  var CONTENT_LIMIT_PX = LinqMenu.CONTENT_HEIGHT_IN * 96;
+
+  function checkOverflow() {
+    var box = el('overflow');
+    var over = [];
+
+    Array.prototype.forEach.call(el('preview').querySelectorAll('.page'), function (page, i) {
+      var css = window.getComputedStyle(page);
+      // clientHeight includes padding, which differs between screen and print;
+      // the content box does not, so compare that.
+      var content = page.clientHeight -
+        parseFloat(css.paddingTop) - parseFloat(css.paddingBottom);
+      // Half a point of tolerance for sub-pixel layout rounding.
+      if (content > CONTENT_LIMIT_PX + 0.7) {
+        var heading = page.querySelector('.month');
+        over.push({
+          label: heading ? heading.textContent : 'Page ' + (i + 1),
+          inches: content / 96
+        });
+      }
+    });
+
+    if (over.length === 0) {
+      box.hidden = true;
+      return;
+    }
+
+    var worst = over.reduce(function (a, b) { return b.inches > a.inches ? b : a; });
+    box.hidden = false;
+    box.innerHTML =
+      '<strong>' + (over.length === 1 ? over[0].label + ' is' : over.length + ' pages are') +
+      ' taller than one sheet.</strong>' +
+      '<span class="fix">' + worst.inches.toFixed(2) + 'in of content against a ' +
+      CONTENT_LIMIT_PX / 96 + 'in limit, so it will print on two sheets. ' +
+      'Reduce Text size, switch Layout to one page per week, or uncheck a ' +
+      'category or meal.</span>';
+  }
+
+  /** Remember every control, including ones that exist before a menu loads. */
+  function persist() {
+    savePrefs({
+      sessions: asFlags(boxes('session')),
+      categories: asFlags(boxes('category')),
+      layout: el('layout').value,
+      scale: el('scale').value,
+      hoist: el('hoist').value,
+      title: el('title').value,
+      building: el('building').value,
+      district: el('district').value,
+      nutrition: el('nutrition').value,
+      identifier: el('identifier').value
+    });
+  }
+
+  function asFlags(list) {
+    var out = {};
+    list.forEach(function (b) { out[b.value] = b.checked; });
+    return out;
+  }
+
+  function formatRange(calendar) {
+    var keys = Array.from(calendar.keys()).sort();
+    if (keys.length === 0) return '';
+    var fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+    var first = new Date(keys[0] + 'T00:00:00');
+    var last = new Date(keys[keys.length - 1] + 'T00:00:00');
+    return fmt.format(first) + ' to ' + fmt.format(last) + ', ' + last.getFullYear();
+  }
+
+  function schoolName() {
+    var option = el('building').selectedOptions[0];
+    return option ? option.textContent : 'Menu';
+  }
+
+  /** Point the deep link at whatever school is currently selected. */
+  function updateLink() {
+    var link = el('live-link');
+    link.href = LinqMenu.publicMenuUrl({
+      identifier: el('identifier').value.trim(),
+      buildingId: el('building').value
+    });
+    link.textContent = 'View ' + schoolName() + ' on linqconnect.com';
+  }
+
+  function titleCase(s) {
+    return s.replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
+  }
+  function escapeText(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // -- wiring -------------------------------------------------------------
+  var prefs = loadPrefs();
+
+  BUILDINGS.forEach(function (building) {
+    var option = document.createElement('option');
+    option.value = building.buildingId;
+    option.textContent = building.name;
+    el('building').appendChild(option);
+  });
+  // A remembered id from an older build may no longer be in the list, in which
+  // case the assignment leaves the select blank; fall back to the default.
+  el('building').value = prefs.building || DEFAULTS.buildingId;
+  if (!el('building').value) el('building').value = DEFAULTS.buildingId;
+
+  el('district').value = prefs.district || DEFAULTS.districtId;
+  el('nutrition').value = prefs.nutrition || DEFAULTS.nutritionUrl;
+  el('identifier').value = prefs.identifier || DEFAULTS.identifier;
+
+  el('pick').hidden = !DEBUG;
+  el('ids').hidden = !DEBUG;
+  updateLink();
+  el('start').value = isoToday(0);
+  el('end').value = isoToday(35);
+  if (prefs.title) el('title').value = prefs.title;
+  if (prefs.layout) el('layout').value = prefs.layout;
+  if (prefs.scale) el('scale').value = prefs.scale;
+  if (prefs.hoist) el('hoist').value = prefs.hoist;
+
+  el('load').addEventListener('click', load);
+  el('identifier').addEventListener('input', function () {
+    updateLink();
+    persist();
+  });
+  el('building').addEventListener('change', function () {
+    updateLink();
+    persist();
+    // Switching schools makes the loaded menu wrong, so refetch rather than
+    // leave the other school's food on screen. A file-loaded menu cannot be
+    // refetched, so that case just clears.
+    if (loadedFrom === 'network') {
+      load();
+    } else if (loadedFrom === 'file') {
+      status('info', 'Showing the file you opened. Click Load menu to fetch ' +
+        escapeText(schoolName()) + '.');
+    }
+  });
+  el('pick').addEventListener('click', function () { el('file').click(); });
+  el('file').addEventListener('change', function () {
+    if (this.files && this.files[0]) openFile(this.files[0]);
+    this.value = '';
+  });
+  el('print').addEventListener('click', function () { window.print(); });
+  el('cats-all').addEventListener('click', function () {
+    boxes('category').forEach(function (b) { b.checked = true; });
+    render();
+  });
+  el('cats-none').addEventListener('click', function () {
+    boxes('category').forEach(function (b) { b.checked = false; });
+    render();
+  });
+  ['layout', 'scale', 'hoist'].forEach(function (id) {
+    el(id).addEventListener('change', render);
+  });
+  // A text field needs `input`, not `change`, to preview and save as you type.
+  el('title').addEventListener('input', render);
+
+  clearStatus();
+})();
+</script>
+</body>
+</html>
